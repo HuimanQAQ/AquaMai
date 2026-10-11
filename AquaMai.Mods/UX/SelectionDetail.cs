@@ -4,6 +4,7 @@ using AquaMai.Core.Attributes;
 using AquaMai.Config.Attributes;
 using AquaMai.Core.Helpers;
 using AquaMai.Core.Resources;
+using AquaMai.Mods.Utils;
 using DB;
 using HarmonyLib;
 using JetBrains.Annotations;
@@ -11,6 +12,7 @@ using MAI2.Util;
 using Manager;
 using Manager.MaiStudio;
 using Manager.UserDatas;
+using MelonLoader;
 using Monitor;
 using Process;
 using UnityEngine;
@@ -135,18 +137,30 @@ public class SelectionDetail
             }
 
 
-            var width = GuiSizes.FontSize * 15f;
-            var x = GuiSizes.PlayerCenter - width / 2f + GuiSizes.PlayerWidth * player;
+            var playerWidth = GuiSizes.PlayerWidth;
+            var centerX = GuiSizes.PlayerCenter + playerWidth * player;
             var y = Screen.height * 0.87f;
+            if (ScreenPositionAdjust.TryGetMainScreenRect(player, out var mainRect))
+            {
+                playerWidth = mainRect.width;
+                centerX = mainRect.center.x;
+                y = mainRect.y + mainRect.height * (1920f * 0.87f - (1920f - 1080f)) / 1080f;
+            }
+
+            var fontSize = (int)(playerWidth * 0.015f);
+            var labelHeight = fontSize * 1.5f;
+            var margin = playerWidth * 0.005f;
+            var width = fontSize * 15f;
+            var x = centerX - width / 2f;
 
             var labelStyle = GUI.skin.GetStyle("label");
-            labelStyle.fontSize = GuiSizes.FontSize;
+            labelStyle.fontSize = fontSize;
             labelStyle.alignment = TextAnchor.MiddleCenter;
 
-            GUI.Box(new Rect(x, y, width, dataToShow.Count * GuiSizes.LabelHeight + 2 * GuiSizes.Margin), "");
+            GUI.Box(new Rect(x, y, width, dataToShow.Count * labelHeight + 2 * margin), "");
             for (var i = 0; i < dataToShow.Count; i++)
             {
-                GUI.Label(new Rect(x, y + GuiSizes.Margin + i * GuiSizes.LabelHeight, width, GuiSizes.LabelHeight), dataToShow[i]);
+                GUI.Label(new Rect(x, y + margin + i * labelHeight, width, labelHeight), dataToShow[i]);
             }
         }
 

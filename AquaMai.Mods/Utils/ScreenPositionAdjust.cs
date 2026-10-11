@@ -42,6 +42,7 @@ public class ScreenPositionAdjust
     private static RenderTexture renderTexture;
     private static Transform[] mouseTouchPanels = new Transform[2];
     private static Vector3[] mouseTouchPanelBaseScales = new Vector3[2];
+    private static readonly Vector3[] mainImageCorners = new Vector3[4];
 
     private static readonly Vector3 mouseTouchPanelsDelta = new Vector3(0, (1920 - 1080) / 2f, 0);
     private const float MinScale = 0.1f;
@@ -98,9 +99,23 @@ public class ScreenPositionAdjust
         }
     }
 
-    private static float[] offsetX = new float[4];
-    private static float[] offsetY = new float[4];
+    public static float[] offsetX = new float[4];
+    public static float[] offsetY = new float[4];
     private static float[] scale = new float[4];
+
+    public static bool TryGetMainScreenRect(int player, out Rect rect)
+    {
+        rect = default;
+        var image = images[player * 2] as RectTransform;
+        var mainCamera = Camera.main;
+        if (image == null || mainCamera == null) return false;
+
+        image.GetWorldCorners(mainImageCorners);
+        var bottomLeft = mainCamera.WorldToScreenPoint(mainImageCorners[0]);
+        var topRight = mainCamera.WorldToScreenPoint(mainImageCorners[2]);
+        rect = new Rect(bottomLeft.x, Screen.height - topRight.y, topRight.x - bottomLeft.x, topRight.y - bottomLeft.y);
+        return true;
+    }
 
     private static void ApplyScale(int index)
     {
