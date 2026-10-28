@@ -30,12 +30,22 @@ public class CustomIntroCinematic
             "Video file naming: Enter_xxx.mp4 (same video for both screens) OR Enter_xxx_L.mp4 + Enter_xxx_R.mp4 (separate videos for left/right screens)\n" +
             "Audio file naming: Enter_xxx.acb + Enter_xxx.awb (optional, video plays silently without audio files)\n" +
             "xxx = music ID, the folder can contain intro videos for multiple songs\n" +
+            "If the path is exactly LocalAssets, or starts with LocalAssets/, the same sub directory is also searched in the LocalAssets folder of every data package / option package,\n" +
+            "e.g. Sinmai_Data/StreamingAssets/A500/LocalAssets/IntroMovies or <option mount>/N000/LocalAssets/IntroMovies.\n" +
+            "Priority (high to low): option packages > data packages > game root, the higher one wins for the same music ID.\n" +
+            "Other relative paths (e.g. LocalAssetsExtra/IntroMovies) are resolved from the game root only.\n" +
+            "An absolute path is used as is, without searching the packages.\n" +
             "Demo video: https://www.bilibili.com/video/BV1jTxVzjETG",
         zh: "开场视频文件夹的路径\n" +
             "该文件夹应包含开场视频文件 (mp4/acb/awb)\n" +
             "视频文件命名: Enter_xxx.mp4 (左右屏播放同一视频) 或 Enter_xxx_L.mp4 + Enter_xxx_R.mp4 (左右屏播放不同的视频)\n" +
             "音频文件命名: Enter_xxx.acb + Enter_xxx.awb (可选, 无音频文件时静音播放)\n" +
             "xxx = 乐曲ID, 文件夹内可以包含多个乐曲的开场视频\n" +
+            "如果路径恰好是 LocalAssets，或以 LocalAssets/ 开头，该子目录也会在每个数据包 / option 包的 LocalAssets 目录下查找，\n" +
+            "例如 Sinmai_Data/StreamingAssets/A500/LocalAssets/IntroMovies 或 <option 挂载目录>/N000/LocalAssets/IntroMovies。\n" +
+            "优先级从高到低：option 包 > 数据包 > 游戏根目录，同一乐曲 ID 以优先级高的为准。\n" +
+            "其它相对路径（例如 LocalAssetsExtra/IntroMovies）只按游戏根目录解析。\n" +
+            "填写绝对路径时只读取该路径，不再遍历数据包。\n" +
             "使用 MaiChartManager 中的工具可以快速转换视频\n" +
             "效果演示: https://www.bilibili.com/video/BV1jTxVzjETG")]
     private static readonly string IntroMovieDir = "LocalAssets/IntroMovies";
@@ -57,15 +67,27 @@ public class CustomIntroCinematic
     {
         if (_isInitialized) return true;
 
-        HashSet<int> _targetMusicIds = new HashSet<int>();
-
-        // 解析视频文件夹路径
-        string resolvedDir = FileSystem.ResolvePath(IntroMovieDir.Trim());
-        if (!Directory.Exists(resolvedDir))
+        // LocalAssets 可能存在于游戏根目录，也可能存在于各个数据包 / option 包里
+        var resolvedDirs = LocalAssets.ResolveAll(IntroMovieDir);
+        if (resolvedDirs.Count == 0)
         {
-            MelonLogger.Msg($"[CustomIntroCinematic] Movie directory does not exist: {resolvedDir}");
+            MelonLogger.Msg($"[CustomIntroCinematic] Movie directory does not exist in game root or data/option packages: {IntroMovieDir}");
             return false;
         }
+
+        foreach (var resolvedDir in resolvedDirs)
+        {
+            LoadIntroMovies(resolvedDir);
+        }
+
+        MelonLogger.Msg($"[CustomIntroCinematic] Initialized with {_targetIDMovieDict.Count} songs.");
+        _isInitialized = true;
+        return true;
+    }
+
+    private static void LoadIntroMovies(string resolvedDir)
+    {
+        HashSet<int> _targetMusicIds = new HashSet<int>();
 
         // 读取文件夹内的所有视频和音频文件
         var videoFiles = Directory.GetFiles(resolvedDir, "*.mp4", SearchOption.TopDirectoryOnly);
@@ -230,10 +252,6 @@ public class CustomIntroCinematic
                 MelonLogger.Msg($"[CustomIntroCinematic] Files not found or invalid for music {musicId}");
             }
         }
-
-        MelonLogger.Msg($"[CustomIntroCinematic] Initialized with {_targetIDMovieDict.Count} songs.");
-        _isInitialized = true;
-        return true;
     }
 
 
