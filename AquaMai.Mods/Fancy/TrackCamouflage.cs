@@ -67,6 +67,9 @@ public class TrackCamouflage
     [HarmonyPrepare]
     public static bool Prepare()
     {
+        // 注入失败时 transpiler 会把它关掉，所以要先标记为可用
+        _initialized = true;
+
         // 目录要到 amdaemon 就绪后才齐（option 包这时才挂载），所以不能以目录是否存在来决定要不要 patch，
         // 改为就绪之后再加载
         AmDaemonReady.RunWhenReady(Load);
@@ -139,7 +142,6 @@ public class TrackCamouflage
         }
 
         MelonLogger.Msg($"[TrackCamouflage] Loaded {_camouflagesDict.Count} camouflage(s)");
-        _initialized = true;
     }
 
     // 封面文件名 <曲目ID>_jacket.jpg/png，只支持 jpg/png，不支持 ab
