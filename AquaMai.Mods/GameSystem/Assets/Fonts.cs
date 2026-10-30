@@ -75,7 +75,7 @@ public class Fonts
         var resolvedPaths = pathsStr
             .Split(';')
             .Where(p => !string.IsNullOrWhiteSpace(p))
-            .Select(FileSystem.ResolvePath);
+            .Select(LocalAssets.ResolvePath);
 
         var result = new List<TMP_FontAsset>();
         foreach (var p in resolvedPaths)
