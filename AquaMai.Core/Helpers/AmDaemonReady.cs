@@ -15,21 +15,28 @@ namespace AquaMai.Core.Helpers;
  */
 public static class AmDaemonReady
 {
+    private static readonly object _lock = new();
     private static readonly List<Action> _pending = [];
+    private static volatile bool _isReady;
 
-    public static bool IsReady { get; private set; }
+    public static bool IsReady => _isReady;
 
     // 已经就绪就直接执行，否则排队等就绪后执行
     public static void RunWhenReady(Action action)
     {
         if (action == null) return;
-        if (IsReady)
+
+        lock (_lock)
         {
-            Run(action);
-            return;
+            // 判定和入队必须在同一把锁里：否则这里刚判断完还没入队，那边就把队列取走清空了，任务会丢
+            if (!_isReady)
+            {
+                _pending.Add(action);
+                return;
+            }
         }
 
-        _pending.Add(action);
+        Run(action);
     }
 
     // PowerOnProcess 在 amdaemon 就绪后调用它，此时 option 包都已挂载
@@ -37,11 +44,17 @@ public static class AmDaemonReady
     [HarmonyPatch(typeof(MAI2System.SystemConfig), "initializeAfterAMDaemonReady")]
     public static void MarkReady()
     {
-        if (IsReady) return;
-        IsReady = true;
+        List<Action> pending;
+        lock (_lock)
+        {
+            if (_isReady) return;
+            _isReady = true;
+            pending = new List<Action>(_pending);
+            _pending.Clear();
+        }
 
-        foreach (var action in _pending) Run(action);
-        _pending.Clear();
+        // 具体任务可能要扫目录、解图片，不能锁着跑
+        foreach (var action in pending) Run(action);
     }
 
     private static void Run(Action action)
