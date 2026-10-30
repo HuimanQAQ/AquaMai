@@ -42,16 +42,7 @@ public class TrackCamouflage
     - Or set HideNoteDesigner = true to hide it and show ""-"" like Basic/Advanced charts
   - UnlockScore: minimum achievement % to remove camouflage, e.g. 97.0
     - Optional, default 0 — any existing score removes camouflage; set to 102 to keep camouflage forever
-- Camouflage jacket filename is <Music ID>_jacket.jpg/png. Only jpg/png are supported (not .ab).
-- If the path is exactly LocalAssets, or starts with LocalAssets/, the same sub directory is also searched in the LocalAssets folder of
-  every data package / option package, e.g. Sinmai_Data/StreamingAssets/A500/LocalAssets/Camouflages and
-  <option mount>/N000/LocalAssets/Camouflages. Priority (high to low):
-  option packages > data packages > game root, so a higher one overrides the same music ID.
-- Different directories are merged per file: a toml overrides the camouflage info, a jacket image
-  overrides the cover, so a higher priority directory that only ships a toml keeps the cover image
-  loaded from a lower priority directory.
-- Other relative paths (e.g. LocalAssetsExtra/Camouflages) are resolved from the game root only.
-- An absolute path is used as is, without searching the packages.",
+- Camouflage jacket filename is <Music ID>_jacket.jpg/png. Only jpg/png are supported (not .ab).",
         zh: @"曲目伪装信息和封面文件夹的路径
 - 曲目伪装信息的文件名为 <曲目ID>.toml，TOML 文档可填入的字段包括：
   - Name: 伪装后的曲目名
@@ -60,14 +51,7 @@ public class TrackCamouflage
     - 或者：亦可用 HideNoteDesigner = true 来隐藏谱师、显示为和绿黄谱一样的 ""-""
   - UnlockScore：解除伪装所需要的最低达成率，例如 97.0
     - 可选，默认为0，即只要玩家打过一次、有过成绩，就不再伪装；而通过指定为102的方式，则可以实现永远伪装
-- 伪装封面的文件名为 <曲目ID>_jacket.jpg/png。目前仅支持jpg、png这两种格式，不支持ab。
-- 如果路径恰好是 LocalAssets，或以 LocalAssets/ 开头，该子目录也会在每个数据包 / option 包的 LocalAssets 目录下查找，
-  例如 Sinmai_Data/StreamingAssets/A500/LocalAssets/Camouflages、<option 挂载目录>/N000/LocalAssets/Camouflages。
-  优先级从高到低：option 包 > 数据包 > 游戏根目录，同一曲目 ID 以优先级高的为准。
-- 不同目录之间按文件合并：toml 覆盖伪装信息，封面图覆盖封面，所以高优先级目录只提供 toml 时，
-  仍会沿用低优先级目录里的封面图。
-- 其它相对路径（例如 LocalAssetsExtra/Camouflages）只按游戏根目录解析。
-- 填写绝对路径时只读取该路径，不再遍历数据包。")]
+- 伪装封面的文件名为 <曲目ID>_jacket.jpg/png。目前仅支持jpg、png这两种格式，不支持ab。")]
     public static readonly string CamouflageDir = "LocalAssets/Camouflages";
 
     [ConfigEntry(
@@ -81,131 +65,90 @@ public class TrackCamouflage
     private static readonly Dictionary<int, CamouflageInfo> _camouflagesDict = [];
 
     [HarmonyPrepare]
-    public static bool Initialize()
+    public static bool Prepare()
     {
-        if (_initialized)
-            return true;
-
-        // LocalAssets 可能存在于游戏根目录，也可能存在于各个数据包 / option 包里
-        var resolvedDirs = LocalAssets.ResolveAll(CamouflageDir);
-        if (resolvedDirs.Count == 0)
-        {
-            MelonLogger.Error($"[TrackCamouflage] Camouflage directory does not exist in game root or data/option packages: {CamouflageDir}");
-            return false;
-        }
-
-        foreach (var resolvedDir in resolvedDirs)
-        {
-            LoadCamouflages(resolvedDir);
-        }
-
-        MelonLogger.Msg($"[TrackCamouflage] Loaded {_camouflagesDict.Count} file(s)");
-        _initialized = true;
+        // 目录要到 amdaemon 就绪后才齐（option 包这时才挂载），所以不能以目录是否存在来决定要不要 patch，
+        // 改为就绪之后再加载
+        AmDaemonReady.RunWhenReady(Load);
         return true;
     }
 
-    private static void LoadCamouflages(string resolvedDir)
+    private static void Load()
     {
-        var camouflageDefFiles = Directory.GetFiles(resolvedDir, "*.toml", SearchOption.TopDirectoryOnly);
-        var allJacketFiles = Directory.GetFiles(resolvedDir, $"*_jacket.*", SearchOption.TopDirectoryOnly);
-        var handledMusicIds = new HashSet<int>();
-
-        foreach (var defFilePath in camouflageDefFiles)
+        var dirs = LocalAssets.ResolveAll(CamouflageDir);
+        if (dirs.Count == 0)
         {
-            if (!int.TryParse(Path.GetFileNameWithoutExtension(defFilePath), out int musicID) || musicID <= 0)
-                continue;
+            MelonLogger.Error($"[TrackCamouflage] Camouflage directory not found: {CamouflageDir}");
+            return;
+        }
 
-            MelonLogger.Msg($"[TrackCamouflage] Loading file {Path.GetFileName(defFilePath)} for music ID {musicID}");
+        // 伪装信息和封面分开合并：目录之间按文件覆盖，所以高优先级目录只提供了 toml 时，
+        // 封面仍然沿用低优先级目录的，反过来也一样
+        var infos = new Dictionary<int, CamouflageInfo>();
+        var jacketPaths = new Dictionary<int, string>();
 
-            CamouflageInfo parsedData;
-            try
+        foreach (var dir in dirs)
+        {
+            foreach (var defFilePath in Directory.GetFiles(dir, "*.toml", SearchOption.TopDirectoryOnly))
             {
-                var parsedDoc = TomlParser.ParseFile(defFilePath);
-                parsedData = new CamouflageInfo(parsedDoc);
-                parsedData.Load();
-            }
-            catch (Exception e)
-            {
-                MelonLogger.Warning($"[TrackCamouflage] Failed to parse information for music {musicID}, skipping: {e}");
-                continue;
-            }
+                if (!int.TryParse(Path.GetFileNameWithoutExtension(defFilePath), out var musicID) || musicID <= 0)
+                    continue;
 
-            if (parsedData == null)
-                continue;
-
-            var jacketFiles = GetJacketFiles(allJacketFiles, musicID);
-            if (jacketFiles.Length == 0)
-                MelonLogger.Msg($"[TrackCamouflage] No jacket file for music ID {musicID}");
-
-            var jacketLoaded = false;
-            foreach (var jacketFilePath in jacketFiles)
-            {
                 try
                 {
-                    if (!parsedData.LoadJacketTexture(jacketFilePath))
-                    {
-                        MelonLogger.Warning($"[TrackCamouflage] Failed to decode jacket file {Path.GetFileName(jacketFilePath)} for music ID {musicID}");
-                        continue;
-                    }
-
-                    MelonLogger.Msg($"[TrackCamouflage] Loaded jacket file {Path.GetFileName(jacketFilePath)} for music ID {musicID}");
-                    jacketLoaded = true;
-                    break;
+                    var info = new CamouflageInfo(TomlParser.ParseFile(defFilePath));
+                    info.Load();
+                    infos[musicID] = info;
+                    MelonLogger.Msg($"[TrackCamouflage] Loaded {Path.GetFileName(defFilePath)} for music ID {musicID}");
                 }
                 catch (Exception e)
                 {
+                    MelonLogger.Warning($"[TrackCamouflage] Failed to parse {Path.GetFileName(defFilePath)}, skipping: {e}");
+                }
+            }
+
+            foreach (var jacketFilePath in Directory.GetFiles(dir, "*_jacket.*", SearchOption.TopDirectoryOnly))
+            {
+                if (TryGetJacketMusicID(jacketFilePath, out var musicID)) jacketPaths[musicID] = jacketFilePath;
+            }
+        }
+
+        foreach (var pair in infos)
+        {
+            var musicID = pair.Key;
+            var info = pair.Value;
+            if (jacketPaths.TryGetValue(musicID, out var jacketFilePath))
+            {
+                try
+                {
+                    if (!info.LoadJacketTexture(jacketFilePath))
+                        MelonLogger.Warning($"[TrackCamouflage] Failed to decode {Path.GetFileName(jacketFilePath)} for music ID {musicID}");
+                }
+                catch (Exception e)
+                {
+                    // 封面读不出来不影响伪装信息本身生效
                     MelonLogger.Warning($"[TrackCamouflage] Failed to read jacket file {jacketFilePath}: {e}");
                 }
             }
-
-            // 高优先级目录只覆盖了配置文件、没有提供封面时，保留低优先级目录已加载的封面
-            if (!jacketLoaded && _camouflagesDict.TryGetValue(musicID, out var previous))
+            else
             {
-                parsedData.TakeJacketFrom(previous);
+                MelonLogger.Msg($"[TrackCamouflage] No jacket file for music ID {musicID}");
             }
 
-            _camouflagesDict[musicID] = parsedData;
-            handledMusicIds.Add(musicID);
+            _camouflagesDict[musicID] = info;
         }
 
-        // 只放了封面、没有成功加载 toml 的目录：只覆盖封面，配置文件仍用低优先级目录的
-        foreach (var jacketFilePath in allJacketFiles)
-        {
-            if (!TryGetJacketMusicId(jacketFilePath, out var musicID)) continue;
-            if (handledMusicIds.Contains(musicID)) continue;
-            if (!_camouflagesDict.TryGetValue(musicID, out var existing))
-                continue;
-
-            try
-            {
-                if (!existing.LoadJacketTexture(jacketFilePath))
-                {
-                    MelonLogger.Warning($"[TrackCamouflage] Failed to decode jacket file {Path.GetFileName(jacketFilePath)} for music ID {musicID}");
-                    continue;
-                }
-
-                MelonLogger.Msg($"[TrackCamouflage] Overrode jacket file {Path.GetFileName(jacketFilePath)} for music ID {musicID}");
-            }
-            catch (Exception e)
-            {
-                MelonLogger.Warning($"[TrackCamouflage] Failed to read jacket file {jacketFilePath}: {e}");
-            }
-        }
+        MelonLogger.Msg($"[TrackCamouflage] Loaded {_camouflagesDict.Count} camouflage(s)");
+        _initialized = true;
     }
 
-    private static string[] GetJacketFiles(string[] allJacketFiles, int musicID)
-    {
-        return allJacketFiles
-            .Where(it => TryGetJacketMusicId(it, out var id) && id == musicID)
-            .ToArray();
-    }
-
-    private static bool TryGetJacketMusicId(string jacketFilePath, out int musicID)
+    // 封面文件名 <曲目ID>_jacket.jpg/png，只支持 jpg/png，不支持 ab
+    private static bool TryGetJacketMusicID(string jacketFilePath, out int musicID)
     {
         musicID = 0;
+        if (!AllowedImageExts.Contains(Path.GetExtension(jacketFilePath).ToLowerInvariant())) return false;
         if (!int.TryParse(Path.GetFileNameWithoutExtension(jacketFilePath).Split('_')[0], out musicID)) return false;
-        if (musicID <= 0) return false;
-        return AllowedImageExts.Contains(Path.GetExtension(jacketFilePath).ToLowerInvariant());
+        return musicID > 0;
     }
 
     #region MusicChainCard Patch
@@ -542,13 +485,6 @@ public class TrackCamouflage
 
             _jacket = texture;
             return true;
-        }
-
-        // 按文件覆盖：高优先级目录没有提供封面时，沿用低优先级目录的封面
-        public void TakeJacketFrom(CamouflageInfo other)
-        {
-            if (other == null || other._jacket == null) return;
-            _jacket = other._jacket;
         }
 
         private string LoadString(string key)
