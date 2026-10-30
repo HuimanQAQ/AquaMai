@@ -148,15 +148,28 @@ public class CustomIntroCinematic
 
         // acb / awb 必须成对出现，缺一个就当这个目录没提供音频，静音播放
         var audios = new Dictionary<(int musicId, string ext), string>();
+        var duplicatedAudioIds = new HashSet<int>();
+
         foreach (var filePath in Directory.GetFiles(dir, "*.acb", SearchOption.TopDirectoryOnly)
                      .Concat(Directory.GetFiles(dir, "*.awb", SearchOption.TopDirectoryOnly)))
         {
             if (!TryParseAudioName(filePath, out var musicId, out var ext)) continue;
+
+            // 与视频同理，同一目录里两个文件指向同一乐曲同一位置就是名字写错了
+            if (audios.ContainsKey((musicId, ext)))
+            {
+                MelonLogger.Msg($"[CustomIntroCinematic] Duplicate audio file for music {musicId} in {dir}: {Path.GetFileName(filePath)}");
+                duplicatedAudioIds.Add(musicId);
+                continue;
+            }
+
             audios[(musicId, ext)] = filePath;
         }
 
         foreach (var musicId in audios.Keys.Select(it => it.musicId).Distinct())
         {
+            if (duplicatedAudioIds.Contains(musicId)) continue;
+
             var acbPath = audios.GetValueOrDefault((musicId, ".acb"));
             var awbPath = audios.GetValueOrDefault((musicId, ".awb"));
 
