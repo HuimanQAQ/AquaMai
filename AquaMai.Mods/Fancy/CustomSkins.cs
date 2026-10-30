@@ -109,10 +109,14 @@ public class CustomSkins
     [HarmonyPatch(typeof(GameNotePrefabContainer), "Initialize")]
     private static void LoadNoteSkin()
     {
-        var resolvedDir = FileSystem.ResolvePath(skinsDir);
-        if (!Directory.Exists(resolvedDir)) return;
+        // 按文件名合并根目录和数据包 / option 包里的 LocalAssets
+        var files = new Dictionary<string, string>();
+        foreach (var file in LocalAssets.EnumerateFiles(skinsDir))
+        {
+            files[Path.GetFileName(file)] = file;
+        }
 
-        foreach (var laFile in Directory.EnumerateFiles(resolvedDir))
+        foreach (var laFile in files.Values)
         {
             if (!ImageExts.Contains(Path.GetExtension(laFile).ToLowerInvariant())) continue;
             var texture = new Texture2D(1, 1, TextureFormat.RGBA32, false);

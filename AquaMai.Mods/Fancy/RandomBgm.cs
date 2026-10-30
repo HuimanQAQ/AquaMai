@@ -33,12 +33,22 @@ public class RandomBgm
     [HarmonyPatch(typeof(SoundManager), "Initialize")]
     public static void Init()
     {
-        var resolvedDir = FileSystem.ResolvePath(mai2CueDir);
-        if (!Directory.Exists(resolvedDir)) return;
-        var files = Directory.EnumerateFiles(resolvedDir);
-        foreach (var file in files)
+        // 目录要到 amdaemon 就绪后才齐（option 包这时才挂载）
+        AmDaemonReady.RunWhenReady(LoadAcbs);
+    }
+
+    private static void LoadAcbs()
+    {
+        // 按文件名合并，同名 acb 以优先级高的目录为准，避免重复注册
+        var files = new Dictionary<string, string>();
+        foreach (var file in LocalAssets.EnumerateFiles(mai2CueDir))
         {
             if (!file.EndsWith(".acb")) continue;
+            files[Path.GetFileName(file)] = file;
+        }
+
+        foreach (var file in files.Values)
+        {
             // Seems there's limit for max opened ACB files
             _acbs.Add(Path.ChangeExtension(file, null));
         }

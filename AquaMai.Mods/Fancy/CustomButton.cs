@@ -27,19 +27,24 @@ public class CustomButton
     private static readonly Dictionary<string, Sprite> spriteDict = new();
     private static bool isInitialized = false;
 
-    public static void OnBeforePatch() { Initialize(); }
+    public static void OnBeforePatch() { AmDaemonReady.RunWhenReady(Initialize); }
 
     private static void Initialize()
     {
-        // resolve path
-        var buttonDir_r = FileSystem.ResolvePath(buttonDir);
-        if (!Directory.Exists(buttonDir_r)) {
+        // 按文件名合并根目录和数据包 / option 包里的 LocalAssets
+        var files = new Dictionary<string, string>();
+        foreach (var file in LocalAssets.EnumerateFiles(buttonDir, "*.png")) {
+            files[Path.GetFileName(file)] = file;
+        }
+
+        if (files.Count == 0) {
             MelonLogger.Msg($"[CustomButton] buttonDir not found: {buttonDir}");
             return;
         }
+
         // load button textures to dict
         try {
-            foreach (var file in Directory.EnumerateFiles(buttonDir_r, "*.png")) {
+            foreach (var file in files.Values) {
                 var fileName = Path.GetFileNameWithoutExtension(file);
                 var bytes = File.ReadAllBytes(file);
                 var tex = new Texture2D(2, 2);

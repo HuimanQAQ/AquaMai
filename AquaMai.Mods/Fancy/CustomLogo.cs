@@ -40,14 +40,24 @@ public class CustomLogo
 
     public static void OnBeforePatch()
     {
-        EnumSprite(segaLogo, FileSystem.ResolvePath(segaLogoDir));
-        EnumSprite(allNetLogo, FileSystem.ResolvePath(allNetLogoDir));
+        // 目录要到 amdaemon 就绪后才齐（option 包这时才挂载），所以推迟到就绪后再扫描
+        AmDaemonReady.RunWhenReady(() =>
+        {
+            EnumSprite(segaLogo, segaLogoDir);
+            EnumSprite(allNetLogo, allNetLogoDir);
+        });
     }
 
-    private static void EnumSprite(List<Sprite> collection, string path)
+    private static void EnumSprite(List<Sprite> collection, string configuredDir)
     {
-        if (!Directory.Exists(path)) return;
-        foreach (var file in Directory.EnumerateFiles(path, "*.png"))
+        // 按文件名合并根目录和数据包 / option 包里的 LocalAssets
+        var files = new Dictionary<string, string>();
+        foreach (var file in LocalAssets.EnumerateFiles(configuredDir, "*.png"))
+        {
+            files[Path.GetFileName(file)] = file;
+        }
+
+        foreach (var file in files.Values)
         {
             var data = File.ReadAllBytes(file);
             var texture2D = new Texture2D(1, 1, TextureFormat.RGBA32, false);
