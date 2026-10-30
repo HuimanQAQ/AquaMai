@@ -40,11 +40,20 @@ public class RandomBgm
     private static void LoadAcbs()
     {
         // 按文件名合并，同名 acb 以优先级高的目录为准，避免重复注册
-        var files = new Dictionary<string, string>();
+        var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in LocalAssets.EnumerateFiles(mai2CueDir))
         {
-            if (!file.EndsWith(".acb")) continue;
-            files[Path.GetFileName(file)] = file;
+            if (!file.EndsWith(".acb", StringComparison.OrdinalIgnoreCase)) continue;
+
+            // acb 和 awb 是成对的，游戏按 acb 所在目录去找 awb，缺了 awb 的话这份 cue 加载不起来，
+            // 所以宁可继续用低优先级目录里完整的那份
+            if (!File.Exists(Path.ChangeExtension(file, ".awb")))
+            {
+                MelonLogger.Warning($"[RandomBgm] Missing awb for {Path.GetFileName(file)}, skipping");
+                continue;
+            }
+
+            files[Path.GetFileNameWithoutExtension(file)] = file;
         }
 
         foreach (var file in files.Values)
