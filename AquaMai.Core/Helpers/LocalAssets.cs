@@ -46,13 +46,15 @@ public static class LocalAssets
         try
         {
             Singleton<DataManager>.Instance.GetDirs(Application.streamingAssetsPath, AppImage.OptionMountRootPath, ref dirs);
+
+            // 只在调用成功时缓存，异常时拿到的可能只有数据包、没有 option 包，缓存下来整个会话都缺目录
+            if (AmDaemonReady.IsReady) _gameDirs = dirs;
         }
         catch (Exception e)
         {
             MelonLogger.Warning($"[LocalAssets] Failed to get game data directories: {e.Message}");
         }
 
-        if (AmDaemonReady.IsReady) _gameDirs = dirs;
         return dirs;
     }
 
@@ -122,6 +124,12 @@ public static class LocalAssets
         {
             candidates.Add(subDir.Length == 0 ? root : Path.Combine(root, subDir));
         }
+
+        // 根目录的 LocalAssets 不存在时也要有候选，否则 ResolvePath 会返回 null，
+        // 调用方就没法像以前一样报错或者自己建目录
+        var gameRootCandidate = Path.Combine(FileSystem.ResolvePath(LocalAssetsDirName), subDir);
+        if (candidates.All(it => !string.Equals(it, gameRootCandidate, StringComparison.OrdinalIgnoreCase)))
+            candidates.Add(gameRootCandidate);
 
         return candidates;
     }
