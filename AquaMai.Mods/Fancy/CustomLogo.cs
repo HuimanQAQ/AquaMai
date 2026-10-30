@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using AquaMai.Config.Attributes;
 using AquaMai.Core.Helpers;
@@ -50,8 +51,8 @@ public class CustomLogo
 
     private static void EnumSprite(List<Sprite> collection, string configuredDir)
     {
-        // 按文件名合并根目录和数据包 / option 包里的 LocalAssets
-        var files = new Dictionary<string, string>();
+        // 按文件名合并根目录和数据包 / option 包里的 LocalAssets，Windows 下文件名不区分大小写
+        var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in LocalAssets.EnumerateFiles(configuredDir, "*.png"))
         {
             files[Path.GetFileName(file)] = file;

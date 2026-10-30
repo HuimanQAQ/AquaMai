@@ -38,8 +38,8 @@ public class ResourcesOverride
             return;
         }
 
-        // 按文件名合并根目录和数据包 / option 包里的 LocalAssets
-        var files = new Dictionary<string, string>();
+        // 按文件名合并根目录和数据包 / option 包里的 LocalAssets，Windows 下文件名不区分大小写
+        var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in LocalAssets.EnumerateFiles(skinsDir, "*.png"))
         {
             files[Path.GetFileName(file)] = file;
