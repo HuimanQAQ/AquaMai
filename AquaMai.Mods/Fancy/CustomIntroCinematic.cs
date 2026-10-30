@@ -71,76 +71,104 @@ public class CustomIntroCinematic
             return;
         }
 
-        // 目录之间按文件合并：高优先级目录里的同名文件覆盖低优先级的，所以 L/R 视频和音频可以分散在不同目录里
-        var videos = new Dictionary<(int musicId, string type), string>();
-        var audios = new Dictionary<(int musicId, string ext), string>();
+        // 视频（单个，或 L/R 成对）和音频（acb + awb）都必须在同一个目录里配齐才有意义：
+        // 游戏是按 acb 所在的目录去找 awb 的，拆到两个目录里就播不出声。
+        // 所以按目录从低到高处理，高优先级目录里完整的配置覆盖低优先级的，不完整的就不去覆盖
+        var videoPaths = new Dictionary<int, (string left, string right)>();
+        var audioPaths = new Dictionary<int, (string acb, string awb)>();
 
         foreach (var dir in dirs)
         {
-            foreach (var filePath in Directory.GetFiles(dir, "*.mp4", SearchOption.TopDirectoryOnly))
-            {
-                if (!TryParseVideoName(filePath, out var musicId, out var type)) continue;
-                videos[(musicId, type)] = filePath;
-            }
-
-            foreach (var filePath in Directory.GetFiles(dir, "*.acb", SearchOption.TopDirectoryOnly)
-                         .Concat(Directory.GetFiles(dir, "*.awb", SearchOption.TopDirectoryOnly)))
-            {
-                if (!TryParseAudioName(filePath, out var musicId, out var ext)) continue;
-                audios[(musicId, ext)] = filePath;
-            }
+            LoadFromDir(dir, videoPaths, audioPaths);
         }
 
-        foreach (var musicId in videos.Keys.Select(it => it.musicId).Distinct())
+        foreach (var pair in videoPaths)
         {
-            var single = videos.GetValueOrDefault((musicId, "single"));
-            var left = videos.GetValueOrDefault((musicId, "l"));
-            var right = videos.GetValueOrDefault((musicId, "r"));
-
-            string leftPath;
-            string rightPath;
-
-            // 单个文件左右屏共用，或者必须 L/R 成对出现，其它组合（例如只剩一边）都不合法
-            if (single != null && left == null && right == null)
-            {
-                leftPath = single;
-                rightPath = single;
-            }
-            else if (single == null && left != null && right != null)
-            {
-                leftPath = left;
-                rightPath = right;
-            }
-            else
-            {
-                MelonLogger.Msg($"[CustomIntroCinematic] Invalid video configuration for music {musicId}: must have either single file or both l and r files");
-                continue;
-            }
-
-            // acb / awb 必须成对出现，缺一个就当没有音频，静音播放
-            var acbPath = audios.GetValueOrDefault((musicId, ".acb"));
-            var awbPath = audios.GetValueOrDefault((musicId, ".awb"));
-            if (acbPath == null || awbPath == null)
-            {
-                if (acbPath != null || awbPath != null)
-                    MelonLogger.Msg($"[CustomIntroCinematic] Invalid audio configuration for music {musicId}: must have exactly one acb and one awb file");
-
-                acbPath = null;
-                awbPath = null;
-            }
-
-            _targetIDMovieDict[musicId] = (leftPath, rightPath, acbPath, awbPath);
+            var audio = audioPaths.GetValueOrDefault(pair.Key);
+            _targetIDMovieDict[pair.Key] = (pair.Value.left, pair.Value.right, audio.acb, audio.awb);
         }
 
         // 只有音频、没有视频的乐曲，属于配置不完整
-        foreach (var musicId in audios.Keys.Select(it => it.musicId).Distinct())
+        foreach (var musicId in audioPaths.Keys.Where(it => !videoPaths.ContainsKey(it)))
         {
-            if (!_targetIDMovieDict.ContainsKey(musicId))
-                MelonLogger.Msg($"[CustomIntroCinematic] Files not found or invalid for music {musicId}");
+            MelonLogger.Msg($"[CustomIntroCinematic] Files not found or invalid for music {musicId}");
         }
 
         MelonLogger.Msg($"[CustomIntroCinematic] Initialized with {_targetIDMovieDict.Count} songs.");
         _isInitialized = true;
+    }
+
+    // 处理一个目录里的文件：完整有效的配置写进 videoPaths / audioPaths，覆盖低优先级目录的结果
+    private static void LoadFromDir(
+        string dir,
+        Dictionary<int, (string left, string right)> videoPaths,
+        Dictionary<int, (string acb, string awb)> audioPaths
+    )
+    {
+        var videos = new Dictionary<(int musicId, string type), string>();
+        var duplicatedIds = new HashSet<int>();
+
+        foreach (var filePath in Directory.GetFiles(dir, "*.mp4", SearchOption.TopDirectoryOnly))
+        {
+            if (!TryParseVideoName(filePath, out var musicId, out var type)) continue;
+
+            // 同一个目录里两个文件指向同一乐曲的同一位置（例如 Enter_123 和 Enter_0123），属于名字写错了
+            if (videos.ContainsKey((musicId, type)))
+            {
+                MelonLogger.Msg($"[CustomIntroCinematic] Duplicate video file for music {musicId} in {dir}: {Path.GetFileName(filePath)}");
+                duplicatedIds.Add(musicId);
+                continue;
+            }
+
+            videos[(musicId, type)] = filePath;
+        }
+
+        foreach (var musicId in videos.Keys.Select(it => it.musicId).Distinct())
+        {
+            if (duplicatedIds.Contains(musicId)) continue;
+
+            var single = videos.GetValueOrDefault((musicId, "single"));
+            var left = videos.GetValueOrDefault((musicId, "l"));
+            var right = videos.GetValueOrDefault((musicId, "r"));
+
+            // 单个文件左右屏共用，或者必须 L/R 成对出现，其它组合（例如只剩一边）都不合法
+            if (single != null && left == null && right == null)
+            {
+                videoPaths[musicId] = (single, single);
+            }
+            else if (single == null && left != null && right != null)
+            {
+                videoPaths[musicId] = (left, right);
+            }
+            else
+            {
+                MelonLogger.Msg($"[CustomIntroCinematic] Invalid video configuration for music {musicId} in {dir}: must have either single file or both l and r files");
+            }
+        }
+
+        // acb / awb 必须成对出现，缺一个就当这个目录没提供音频，静音播放
+        var audios = new Dictionary<(int musicId, string ext), string>();
+        foreach (var filePath in Directory.GetFiles(dir, "*.acb", SearchOption.TopDirectoryOnly)
+                     .Concat(Directory.GetFiles(dir, "*.awb", SearchOption.TopDirectoryOnly)))
+        {
+            if (!TryParseAudioName(filePath, out var musicId, out var ext)) continue;
+            audios[(musicId, ext)] = filePath;
+        }
+
+        foreach (var musicId in audios.Keys.Select(it => it.musicId).Distinct())
+        {
+            var acbPath = audios.GetValueOrDefault((musicId, ".acb"));
+            var awbPath = audios.GetValueOrDefault((musicId, ".awb"));
+
+            if (acbPath != null && awbPath != null)
+            {
+                audioPaths[musicId] = (acbPath, awbPath);
+            }
+            else
+            {
+                MelonLogger.Msg($"[CustomIntroCinematic] Invalid audio configuration for music {musicId} in {dir}: must have both acb and awb files");
+            }
+        }
     }
 
     // 视频文件名 Enter_xxx.mp4（左右屏同一个）或 Enter_xxx_L/R.mp4
