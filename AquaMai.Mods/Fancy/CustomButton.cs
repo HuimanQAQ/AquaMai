@@ -24,7 +24,8 @@ public class CustomButton
         zh: "按钮贴图的目录")]
     private static readonly string buttonDir = "LocalAssets/Buttons";
     
-    private static readonly Dictionary<string, Sprite> spriteDict = new();
+    // 游戏查找时用的是资源名，和用户文件名的实际大小写不一定一致
+    private static readonly Dictionary<string, Sprite> spriteDict = new(StringComparer.OrdinalIgnoreCase);
     private static bool isInitialized = false;
 
     public static void OnBeforePatch() { AmDaemonReady.RunWhenReady(Initialize); }
